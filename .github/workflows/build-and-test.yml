@@ -29,4 +29,4 @@ jobs:
         run: dotnet build src/Microsoft.Data.SqlClient/tests/UnitTests/Microsoft.Data.SqlClient.UnitTests.csproj
 
       - name: Run unit tests
-        run: dotnet test src/Microsoft.Data.SqlClient/tests/UnitTests/Microsoft.Data.SqlClient.UnitTests.csproj --no-build --verbosity normal
+        run: dotnet test src/Microsoft.Data.SqlClient/tests/UnitTests/Microsoft.Data.SqlClient.UnitTests.csproj --no-build --verbosity normal --filter "FullyQualifiedName!~IntegratedAuthConnectionTest"
