@@ -52,4 +52,4 @@ jobs:
       - name: Run TransactionTest
         env:
           TEST_MDS_CONFIG: ${{ github.workspace }}/src/Microsoft.Data.SqlClient/tests/tools/Microsoft.Data.SqlClient.TestUtilities/config.jsonc
-        run: dotnet test src/Microsoft.Data.SqlClient/tests/ManualTests/Microsoft.Data.SqlClient.ManualTests.csproj --no-build --verbosity normal --filter "FullyQualifiedName~TransactionTest"
+        run: dotnet test src/Microsoft.Data.SqlClient/tests/ManualTests/Microsoft.Data.SqlClient.ManualTests.csproj --no-build --verbosity normal --filter "FullyQualifiedName~ManualTesting.Tests.TransactionTest."
