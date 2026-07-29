@@ -1014,6 +1014,35 @@ namespace Microsoft.Data.SqlClient.Connection
             ExecuteTransaction2005(transactionRequest, transactionName, iso, internalTransaction, isDelegateControlRequest);
         }
 
+        /// <summary>
+        /// Resets the session's isolation level to READ COMMITTED (the SQL Server default).
+        /// Called after a transaction completes to prevent isolation level leaking into
+        /// subsequent queries on the same or pool-reused connection (dotnet/SqlClient#96).
+        /// </summary>
+        internal void ExecuteResetTransactionIsolationLevel()
+        {
+            if (_parser == null || _parser._physicalStateObj == null)
+            {
+                return;
+            }
+
+            Task executeTask = _parser.TdsExecuteSQLBatch(
+                "SET TRANSACTION ISOLATION LEVEL READ COMMITTED",
+                ConnectionOptions.ConnectTimeout,
+                notificationRequest: null,
+                _parser._physicalStateObj,
+                sync: true);
+
+            Debug.Assert(executeTask == null, "Should not get a task when doing sync writes");
+
+            _parser.Run(
+                RunBehavior.UntilDone,
+                cmdHandler: null,
+                dataStream: null,
+                bulkCopyHandler: null,
+                _parser._physicalStateObj);
+        }
+
         internal SqlDataReader FindLiveReader(SqlCommand command)
         {
             SqlDataReader reader = null;

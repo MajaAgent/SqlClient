@@ -41,6 +41,7 @@ namespace Microsoft.Data.SqlClient
         private SqlConnectionInternal _innerConnection;
         private bool _disposing;                 // used to prevent us from throwing exceptions while we're disposing
         private WeakReference<SqlTransaction> _parent;                    // weak ref to the outer transaction object; needs to be weak to allow GC to occur.
+        private readonly IsolationLevel _isolationLevel;                 // tracks the transaction's isolation level for cleanup on completion
 
         private static int s_objectTypeCount; // EventSource counter
         internal readonly int _objectID = Interlocked.Increment(ref s_objectTypeCount);
@@ -51,8 +52,9 @@ namespace Microsoft.Data.SqlClient
         internal SqlInternalTransaction(
             SqlConnectionInternal innerConnection,
             TransactionType type,
-            SqlTransaction outerTransaction)
-            : this(innerConnection, type, outerTransaction, NullTransactionId)
+            SqlTransaction outerTransaction,
+            IsolationLevel isolationLevel = IsolationLevel.ReadCommitted)
+            : this(innerConnection, type, outerTransaction, NullTransactionId, isolationLevel)
         {
         }
 
@@ -60,11 +62,13 @@ namespace Microsoft.Data.SqlClient
             SqlConnectionInternal innerConnection,
             TransactionType type,
             SqlTransaction outerTransaction,
-            long transactionId)
+            long transactionId,
+            IsolationLevel isolationLevel = IsolationLevel.ReadCommitted)
         {
             SqlClientEventSource.Log.TryPoolerTraceEvent("SqlInternalTransaction.ctor | RES | CPOOL | Object Id {0}, Created for connection {1}, outer transaction {2}, Type {3}", ObjectID, innerConnection.ObjectID, outerTransaction?.ObjectId, (int)type);
             _innerConnection = innerConnection;
             _transactionType = type;
+            _isolationLevel = isolationLevel;
 
             if (outerTransaction != null)
             {
@@ -211,6 +215,9 @@ namespace Microsoft.Data.SqlClient
             {
                 if (processFinallyBlock)
                 {
+                    // Reset isolation level to prevent leakage into pool-reused connections.
+                    ResetIsolationLevelIfNeeded(innerConnection);
+
                     // Always ensure we're zombied; the server will send an EnvChange
                     // that will cause the zombie, but only if we actually go to the wire.
                     Zombie();
@@ -229,12 +236,22 @@ namespace Microsoft.Data.SqlClient
 
                 _innerConnection.ValidateConnectionForExecute(null);
 
+                // Capture before ExecuteTransaction: TDS response processing may Zombie
+                // this transaction (via ENVCHANGE -> Completed), which nulls _innerConnection.
+                SqlConnectionInternal connection = _innerConnection;
+
                 // If this transaction has been completed, throw exception since it is unusable.
                 try
                 {
                     // COMMIT ignores transaction names, and so there is no reason to pass it anything.  COMMIT
                     // simply commits the transaction from the most recent BEGIN, nested or otherwise.
+<<<<<<< HEAD
+                    connection.ExecuteTransaction(TransactionRequest.Commit, null, IsolationLevel.Unspecified, null, false);
+                    ResetIsolationLevelIfNeeded(connection);
+=======
                     _innerConnection.ExecuteTransaction(TransactionRequest.Commit, null, IsolationLevel.Unspecified, null, false);
+                    ResetIsolationLevelIfNeeded();
+>>>>>>> 270bda7e (fix: reset transaction isolation level after transaction completes (dotnet/SqlClient#96))
                     ZombieParent();
                 }
                 catch (Exception e) when (ADP.IsCatchableExceptionType(e))
@@ -330,14 +347,23 @@ namespace Microsoft.Data.SqlClient
 
                 _innerConnection.ValidateConnectionForExecute(null);
 
+                // Capture before ExecuteTransaction: TDS response processing may Zombie
+                // this transaction (via ENVCHANGE -> Completed), which nulls _innerConnection.
+                SqlConnectionInternal connection = _innerConnection;
+
                 try
                 {
                     // If no arg is given to ROLLBACK it will rollback to the outermost begin - rolling back
                     // all nested transactions as well as the outermost transaction.
-                    _innerConnection.ExecuteTransaction(TransactionRequest.IfRollback, null, IsolationLevel.Unspecified, null, false);
+                    connection.ExecuteTransaction(TransactionRequest.IfRollback, null, IsolationLevel.Unspecified, null, false);
 
                     // Since Rollback will rollback to outermost begin, no need to check
                     // server transaction level.  This transaction has been completed.
+<<<<<<< HEAD
+                    ResetIsolationLevelIfNeeded(connection);
+=======
+                    ResetIsolationLevelIfNeeded();
+>>>>>>> 270bda7e (fix: reset transaction isolation level after transaction completes (dotnet/SqlClient#96))
                     Zombie();
                 }
                 catch (Exception e) when (ADP.IsCatchableExceptionType(e))
@@ -382,6 +408,7 @@ namespace Microsoft.Data.SqlClient
                     CheckTransactionLevelAndZombie();
                     throw;
                 }
+                // Savepoint rollback doesn't end the transaction — keep the isolation level.
             }
         }
 
@@ -444,6 +471,36 @@ namespace Microsoft.Data.SqlClient
             if (innerConnection != null)
             {
                 innerConnection.DisconnectTransaction(this);
+            }
+        }
+
+        /// <summary>
+        /// Resets session isolation level to READ COMMITTED after a non-default
+        /// transaction completes, preventing leak into pool-reused connections.
+        /// </summary>
+        private void ResetIsolationLevelIfNeeded(SqlConnectionInternal connectionOverride = null)
+        {
+            if (_isolationLevel == IsolationLevel.ReadCommitted || _isolationLevel == IsolationLevel.Unspecified)
+            {
+                return;
+            }
+
+            SqlConnectionInternal connection = connectionOverride ?? _innerConnection;
+            if (connection == null)
+            {
+                return;
+            }
+
+            try
+            {
+                connection.ExecuteResetTransactionIsolationLevel();
+            }
+            catch (Exception ex) when (ADP.IsCatchableExceptionType(ex))
+            {
+                SqlClientEventSource.Log.TryAdvancedTraceEvent(
+                    "SqlInternalTransaction.ResetIsolationLevelIfNeeded | ADV | Object Id {0}, Failed to reset isolation level: {1}",
+                    ObjectID,
+                    ex.Message);
             }
         }
 

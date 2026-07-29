@@ -92,7 +92,7 @@ namespace Microsoft.Data.SqlClient
                 connection.EnlistNull();
             }
 
-            _internalTransaction = new SqlInternalTransaction(connection, TransactionType.Delegated, null);
+            _internalTransaction = new SqlInternalTransaction(connection, TransactionType.Delegated, null, isolationLevel: _isolationLevel);
 
             connection.ExecuteTransaction(TransactionRequest.Begin, null, _isolationLevel, _internalTransaction, true);
 

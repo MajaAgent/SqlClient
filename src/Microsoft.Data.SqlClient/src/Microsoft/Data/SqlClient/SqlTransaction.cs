@@ -46,7 +46,8 @@ namespace Microsoft.Data.SqlClient
                 InternalTransaction = new SqlInternalTransaction(
                     internalConnection,
                     TransactionType.LocalFromAPI,
-                    this);
+                    this,
+                    isolationLevel: iso);
             }
             else
             {

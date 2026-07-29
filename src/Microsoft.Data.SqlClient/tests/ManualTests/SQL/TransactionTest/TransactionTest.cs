@@ -52,6 +52,104 @@ namespace Microsoft.Data.SqlClient.ManualTesting.Tests
         public static void ReadNextQueryAfterTxAbortedPoolDisabled(string connString)
             => ReadNextQueryAfterTxAbortedTest(connString);
 
+        /// <summary>
+        /// Verifies that after committing a transaction with Serializable isolation level,
+        /// the session's isolation level is reset to ReadCommitted.
+        /// </summary>
+        [ConditionalTheory(typeof(DataTestUtility), nameof(DataTestUtility.AreConnStringsSetup))]
+        [MemberData(nameof(PoolEnabledConnectionStrings))]
+        public static void TransactionIsolationLevel_ShouldNotLeakAfterCommit(string connString)
+        {
+            using (SqlConnection connection = new SqlConnection(connString))
+            {
+                connection.Open();
+                int defaultIso = GetIsolationLevel(connection);
+                Assert.Equal(2, defaultIso); // 2 = ReadCommitted
+
+                using (SqlTransaction tx = connection.BeginTransaction(IsolationLevel.Serializable))
+                {
+                    int serializableIso = GetIsolationLevel(connection);
+                    Assert.Equal(4, serializableIso); // 4 = Serializable
+                    tx.Commit();
+                }
+
+                int afterCommitIso = GetIsolationLevel(connection);
+                Assert.Equal(2, afterCommitIso);
+            }
+        }
+
+        /// <summary>
+        /// Verifies that after rolling back a transaction with Serializable isolation level,
+        /// the session's isolation level is reset to ReadCommitted.
+        /// </summary>
+        [ConditionalTheory(typeof(DataTestUtility), nameof(DataTestUtility.AreConnStringsSetup))]
+        [MemberData(nameof(PoolEnabledConnectionStrings))]
+        public static void TransactionIsolationLevel_ShouldNotLeakAfterRollback(string connString)
+        {
+            using (SqlConnection connection = new SqlConnection(connString))
+            {
+                connection.Open();
+                int defaultIso = GetIsolationLevel(connection);
+                Assert.Equal(2, defaultIso); // 2 = ReadCommitted
+
+                using (SqlTransaction tx = connection.BeginTransaction(IsolationLevel.Serializable))
+                {
+                    int serializableIso = GetIsolationLevel(connection);
+                    Assert.Equal(4, serializableIso); // 4 = Serializable
+                    tx.Rollback();
+                }
+
+                int afterRollbackIso = GetIsolationLevel(connection);
+                Assert.Equal(2, afterRollbackIso);
+            }
+        }
+
+        /// <summary>
+        /// Verifies that after a TransactionScope with Serializable isolation level completes,
+        /// the isolation level is reset. Also verifies no leak through connection pooling.
+        /// </summary>
+        [ConditionalTheory(typeof(DataTestUtility), nameof(DataTestUtility.AreConnStringsSetup))]
+        [MemberData(nameof(PoolEnabledConnectionStrings))]
+        public static void TransactionIsolationLevel_ShouldNotLeakWithTransactionScope(string connString)
+        {
+            using (var scope = new System.Transactions.TransactionScope(
+                System.Transactions.TransactionScopeOption.RequiresNew,
+                new System.Transactions.TransactionOptions
+                {
+                    IsolationLevel = System.Transactions.IsolationLevel.Serializable
+                }))
+            {
+                using (SqlConnection connection = new SqlConnection(connString))
+                {
+                    connection.Open();
+                    int isoDuringTransaction = GetIsolationLevel(connection);
+                    Assert.Equal(4, isoDuringTransaction); // 4 = Serializable
+                }
+            }
+
+            using (SqlConnection connection = new SqlConnection(connString))
+            {
+                connection.Open();
+                int isoAfterScope = GetIsolationLevel(connection);
+                Assert.Equal(2, isoAfterScope); // 2 = ReadCommitted
+            }
+        }
+
+        /// <summary>
+        /// Helper: queries the current session's transaction isolation level.
+        /// Returns 1=ReadUncommitted, 2=ReadCommitted, 3=RepeatableRead,
+        /// 4=Serializable, 5=Snapshot.
+        /// </summary>
+        private static int GetIsolationLevel(SqlConnection connection)
+        {
+            using (SqlCommand cmd = new SqlCommand(
+                "SELECT transaction_isolation_level FROM sys.dm_exec_sessions WHERE session_id = @@SPID",
+                connection))
+            {
+                return (int)cmd.ExecuteScalar();
+            }
+        }
+
         private static void ReadNextQueryAfterTxAbortedTest(string connString)
         {
             using (System.Transactions.TransactionScope scope = new System.Transactions.TransactionScope())
