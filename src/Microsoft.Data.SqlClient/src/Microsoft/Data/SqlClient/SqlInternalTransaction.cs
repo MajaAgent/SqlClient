@@ -236,13 +236,22 @@ namespace Microsoft.Data.SqlClient
 
                 _innerConnection.ValidateConnectionForExecute(null);
 
+                // Capture before ExecuteTransaction: TDS response processing may Zombie
+                // this transaction (via ENVCHANGE -> Completed), which nulls _innerConnection.
+                SqlConnectionInternal connection = _innerConnection;
+
                 // If this transaction has been completed, throw exception since it is unusable.
                 try
                 {
                     // COMMIT ignores transaction names, and so there is no reason to pass it anything.  COMMIT
                     // simply commits the transaction from the most recent BEGIN, nested or otherwise.
+<<<<<<< HEAD
+                    connection.ExecuteTransaction(TransactionRequest.Commit, null, IsolationLevel.Unspecified, null, false);
+                    ResetIsolationLevelIfNeeded(connection);
+=======
                     _innerConnection.ExecuteTransaction(TransactionRequest.Commit, null, IsolationLevel.Unspecified, null, false);
                     ResetIsolationLevelIfNeeded();
+>>>>>>> 270bda7e (fix: reset transaction isolation level after transaction completes (dotnet/SqlClient#96))
                     ZombieParent();
                 }
                 catch (Exception e) when (ADP.IsCatchableExceptionType(e))
@@ -338,15 +347,23 @@ namespace Microsoft.Data.SqlClient
 
                 _innerConnection.ValidateConnectionForExecute(null);
 
+                // Capture before ExecuteTransaction: TDS response processing may Zombie
+                // this transaction (via ENVCHANGE -> Completed), which nulls _innerConnection.
+                SqlConnectionInternal connection = _innerConnection;
+
                 try
                 {
                     // If no arg is given to ROLLBACK it will rollback to the outermost begin - rolling back
                     // all nested transactions as well as the outermost transaction.
-                    _innerConnection.ExecuteTransaction(TransactionRequest.IfRollback, null, IsolationLevel.Unspecified, null, false);
+                    connection.ExecuteTransaction(TransactionRequest.IfRollback, null, IsolationLevel.Unspecified, null, false);
 
                     // Since Rollback will rollback to outermost begin, no need to check
                     // server transaction level.  This transaction has been completed.
+<<<<<<< HEAD
+                    ResetIsolationLevelIfNeeded(connection);
+=======
                     ResetIsolationLevelIfNeeded();
+>>>>>>> 270bda7e (fix: reset transaction isolation level after transaction completes (dotnet/SqlClient#96))
                     Zombie();
                 }
                 catch (Exception e) when (ADP.IsCatchableExceptionType(e))
