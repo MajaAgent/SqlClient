@@ -10,6 +10,21 @@ jobs:
   build-and-test:
     name: Build & Unit Tests
     runs-on: ubuntu-latest
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: "SqlTest123!"
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P SqlTest123! -C -Q 'SELECT 1' || /opt/mssql/bin/sqlcmd -S localhost -U sa -P SqlTest123! -C -Q 'SELECT 1'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      MDS_TCPConnectionString: "Data Source=localhost;Initial Catalog=Northwind;User Id=sa;Password=SqlTest123!;Encrypt=false;TrustServerCertificate=true"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -22,11 +37,25 @@ jobs:
       - name: Restore tools
         run: dotnet tool restore
 
+      - name: Create test database
+        run: |
+          docker run --rm --network host \
+            mcr.microsoft.com/mssql-tools:latest \
+            /opt/mssql-tools18/bin/sqlcmd \
+            -S 127.0.0.1 -U sa -P SqlTest123! -C \
+            -Q "IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = 'Northwind') CREATE DATABASE Northwind"
+
       - name: Build Microsoft.Data.SqlClient
         run: dotnet build src/Microsoft.Data.SqlClient/src/Microsoft.Data.SqlClient.csproj
 
       - name: Build unit tests
         run: dotnet build src/Microsoft.Data.SqlClient/tests/UnitTests/Microsoft.Data.SqlClient.UnitTests.csproj
 
+      - name: Build manual tests
+        run: dotnet build src/Microsoft.Data.SqlClient/tests/ManualTests/Microsoft.Data.SqlClient.ManualTests.csproj
+
       - name: Run unit tests
         run: dotnet test src/Microsoft.Data.SqlClient/tests/UnitTests/Microsoft.Data.SqlClient.UnitTests.csproj --no-build --verbosity normal --filter "FullyQualifiedName!~IntegratedAuthConnectionTest"
+
+      - name: Run TransactionTest
+        run: dotnet test src/Microsoft.Data.SqlClient/tests/ManualTests/Microsoft.Data.SqlClient.ManualTests.csproj --no-build --verbosity normal --filter "FullyQualifiedName~TransactionTest"
