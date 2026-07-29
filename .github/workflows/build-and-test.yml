@@ -1,0 +1,32 @@
+name: Build and Test
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    name: Build & Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore tools
+        run: dotnet tool restore
+
+      - name: Build Microsoft.Data.SqlClient
+        run: dotnet build src/Microsoft.Data.SqlClient/src/Microsoft.Data.SqlClient.csproj
+
+      - name: Build unit tests
+        run: dotnet build src/Microsoft.Data.SqlClient/tests/UnitTests/Microsoft.Data.SqlClient.UnitTests.csproj
+
+      - name: Run unit tests
+        run: dotnet test src/Microsoft.Data.SqlClient/tests/UnitTests/Microsoft.Data.SqlClient.UnitTests.csproj --no-build --verbosity normal
